@@ -1,72 +1,41 @@
 import os
-import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+from fastapi import FastAPI
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-from rag import RAGStore
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ========= Load Main Prompt =========
-with open("mainprompt.md", "r") as f:
-    MAIN_PROMPT = f.read()
-
-# ========= Load Model =========
-MODEL_NAME = "google/gemma-3-270m-it"  # lightweight enough for Railway with 1-2GB
+# تحميل الموديل عند التشغيل
+MODEL_NAME = "google/gemma-3-270m-it"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto")
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    torch_dtype=torch.float32,
+    device_map="cpu"
+)
 
-# ========= RAG =========
-rag = RAGStore()
+app = FastAPI()
 
-# ========= Telegram Token =========
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("⚠️ TELEGRAM_BOT_TOKEN is missing in environment variables!")
+# Telegram Bot
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# ========= Generate Function =========
-def generate_response(query: str) -> str:
-    # 1. Search in RAG
-    context_docs = rag.search(query, top_k=3)
-    context = "\n".join(context_docs)
+async def start(update, context):
+    await update.message.reply_text("🤖 أنا جاهز!")
 
-    # 2. Build prompt
-    full_prompt = f"{MAIN_PROMPT}\n\nContext:\n{context}\n\nUser: {query}\nAI:"
+async def chat(update, context):
+    text = update.message.text
+    inputs = tokenizer(text, return_tensors="pt")
+    outputs = model.generate(**inputs, max_length=128)
+    reply = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    await update.message.reply_text(reply)
 
-    # 3. Tokenize & generate
-    inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(**inputs, max_new_tokens=200, do_sample=True, temperature=0.7)
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
+@app.on_event("startup")
+async def startup():
+    application.run_polling()
 
-# ========= Telegram Handlers =========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 MR1 AI Agent ready! Send me your queries.")
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.message.text
-    response = generate_response(query)
-
-    # Save to RAG memory
-    rag.add([query])
-
-    await update.message.reply_text(response)
-
-
-# ========= Main =========
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    logger.info("🚀 Bot is running...")
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+@app.get("/")
+async def root():
+    return {"status": "ok", "model": MODEL_NAME}
