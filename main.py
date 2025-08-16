@@ -16,7 +16,7 @@ with open("mainprompt.md", "r") as f:
     MAIN_PROMPT = f.read()
 
 # ========= Load Model =========
-MODEL_NAME = "tiiuae/falcon-7b-instruct"  # lightweight enough for Railway with 1-2GB
+MODEL_NAME = "google/gemma-3-270m-it"  # lightweight enough for Railway with 1-2GB
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto")
 
