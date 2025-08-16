@@ -1,17 +1,27 @@
+# استخدم base image صغيرة
 FROM python:3.10-slim
 
-WORKDIR /app
+# منع الـ pip cache عشان ما يكبر حجم الصورة
+ENV PIP_NO_CACHE_DIR=1
 
-# Install system deps for FAISS
+# تثبيت المتطلبات الأساسية فقط
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    wget \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/
+# إنشاء مجلد للعمل
+WORKDIR /app
+
+# نسخ الملفات
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . /app
+COPY . .
 
+# Railway يتطلب PORT
+ENV PORT=8080
+EXPOSE 8080
+
+# شغل التطبيق
 CMD ["python", "main.py"]
