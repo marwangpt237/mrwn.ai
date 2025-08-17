@@ -1,27 +1,31 @@
-# استخدم base image صغيرة
-FROM python:3.10-slim
+# Base image Python 3.11 slim
+FROM python:3.11-slim
 
-# منع الـ pip cache عشان ما يكبر حجم الصورة
-ENV PIP_NO_CACHE_DIR=1
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
 
-# تثبيت المتطلبات الأساسية فقط
-RUN apt-get update && apt-get install -y \
-    git \
+# Install dependencies for PDFs, CSV, scraping, etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     curl \
+    git \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# إنشاء مجلد للعمل
+# Set working directory
 WORKDIR /app
 
-# نسخ الملفات
+# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy the single-file app
+COPY main.py .
 
-# Railway يتطلب PORT
-ENV PORT=8080
+# Expose port for Railway / FastAPI
 EXPOSE 8080
 
-# شغل التطبيق
-CMD ["python", "main.py"]
+# Command to run the FastAPI app with uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
